@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "C9260A9D-8288-4D37-9D00-F1AC48740F22",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:The Cat.xcodeproj",
+      "identifier" : "02853EF62FDAA2460067896F",
+      "name" : "The Cat"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:The Cat.xcodeproj",
+        "identifier" : "02853F032FDAA2470067896F",
+        "name" : "The CatTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:The Cat.xcodeproj",
+        "identifier" : "02853F0D2FDAA2470067896F",
+        "name" : "The CatUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -1,0 +1,174 @@
+# The Cat
+
+> iOS app — Jeremie Berduck
+
+## Overview
+
+A native iOS app built as part of the Egeniq iOS code assessment.
+
+The app fetches a list of cat breeds from TheCatAPI and displays them in a paginated list with one image per breed. Each entry shows name, origin, life span, and temperament. A detail screen adds the cat information, and a Swift Charts life span bar chart.
+
+API: `GET https://api.thecatapi.com/v1/breeds?page=0&limit=12`
+Auth: `x-api-key` request header
+Time budget: 3 hours
+
+---
+
+## Architecture: MVVM
+
+**Why MVVM?** Views stay declarative; all state and business logic lives in the ViewModel where it can be unit-tested without a UI. SwiftUI's data-flow model maps naturally onto it.
+
+```
+The Cat/
+├── The_CatApp.swift              # @main entry — creates the window
+├── ContentView.swift             # Root view — owns the ViewModel instance
+├── Configuration/
+│   ├── Config.xcconfig           # Injects API key at build time (git-ignored)
+│   └── Configuration.swift       # Type-safe Bundle accessor for the key
+├── Models/
+│   └── Breed.swift               # Data model
+├── Networking/
+│   ├── APIClientProtocol.swift   # Abstraction seam for testing
+│   ├── CatAPIClient.swift        # Concrete URLSession implementation
+│   └── APIError.swift            # Typed error enum
+├── ViewModels/
+│   └── BreedListViewModel.swift  # All state + pagination logic
+└── Views/
+    ├── BreedListView.swift        # Paginated list + pull-to-refresh
+    ├── BreedRowView.swift         # Single list row (thumbnail + metadata)
+    └── BreedDetailView.swift      # Full detail screen with chart
+```
+
+---
+
+## File-by-file
+
+### App Shell
+
+**`The_CatApp.swift`** — `@main` entry point.
+
+**`ContentView.swift`** — The single place where `BreedListViewModel` is instantiated with the real `CatAPIClient`. Owns the state for the whole session. Kept separate from `The_CatApp` so it can be previewed and tested independently.
+
+---
+
+### Configuration
+
+**`Config.xcconfig`** — Build configuration file that defines `CAT_API_KEY`. Referenced by `Info.plist` as `$(CAT_API_KEY)`. **Never commit a real key here** — add this file to `.gitignore`.
+
+**`Configuration.swift`** — Reads values from `Bundle.main.infoDictionary` at runtime. Throws a typed `missingKey` error if a key is absent, so misconfiguration fails loudly instead of silently using an empty string.
+
+---
+
+### Models
+
+**`Breed.swift`** — `Decodable` + `Identifiable` + `Equatable` struct. Maps snake_case JSON keys (`life_span`, `reference_image_id`) to camelCase Swift properties via `CodingKeys`. Computes `imageURL` from `referenceImageId` so callers never construct CDN URLs themselves. Includes a `static let preview` instance for SwiftUI `#Preview` blocks.
+
+---
+
+### Networking
+
+**`APIClientProtocol.swift`** — Single-method protocol: `fetchBreeds(page:) async throws -> [Breed]`. The entire networking contract in one line. Exists solely so `BreedListViewModel` can accept a mock in tests without importing URLSession or touching the network.
+
+**`CatAPIClient.swift`** — Concrete implementation. Builds the URL with `URLComponents` (no string interpolation on query params), injects the API key as the `x-api-key` header, and maps HTTP status codes to `APIError` cases before decoding. Page size is 12 (as it was in the requirements example, but can of course be adjusted) — hardcoded to match the ViewModel's pagination sentinel.
+
+**`APIError.swift`** — `Equatable` error enum with five cases: `invalidURL`, `unauthorized`, `serverError(Int)`, `decodingError`, `unknown`. `Equatable` conformance lets tests assert the exact error without pattern-matching.
+
+---
+
+### ViewModel
+
+**`BreedListViewModel.swift`** — Marked `@Observable` (Swift Observation framework, no Combine) and `@MainActor` (all UI state mutations on the main thread by default). Owns three public properties: `breeds`, `isLoading`, `errorMessage`.
+
+Pagination works by tracking `currentPage` and `hasMorePages`. After each successful fetch, `hasMorePages` is set to `false` when the response contains fewer than 12 items — the view uses `.onAppear` on the last row to trigger the next page load. `refresh()` resets all state and re-fetches from page 0.
+
+Dependency injection via constructor: `init(apiClient: APIClientProtocol)`. Production code passes `CatAPIClient()`; tests pass `MockAPIClient`.
+
+---
+
+### Views
+
+**`BreedListView.swift`** — `NavigationStack` with a `List`. Handles three states: initial loading spinner (empty + `isLoading`), error via `ContentUnavailableView` (empty + `errorMessage`), and the populated list. Pagination trigger: `.onAppear` on the last visible row fires `loadBreeds()`. Inline loading indicator via `.safeAreaInset`. Errors while paginating appear as a dismissable capsule overlay so existing content stays visible.
+
+**`BreedRowView.swift`** — Thumbnail (60×60, rounded) + breed name + origin/life-span subtitle. `AsyncImage` with a `pawprint` SF Symbol fallback for missing or failed images.
+
+**`BreedDetailView.swift`** — Hero image (300pt tall, `scaledToFill`). Temperament string is split on commas into individual chip badges. Life span is parsed into `(min, max)` integers and rendered as a two-bar Swift Charts `BarMark` chart (scale fixed at 0–25 years). Falls back to plain text if the string can't be parsed.
+
+---
+
+## Key Design Decisions
+
+| Concern | Choice | Why |
+|---|---|---|
+| State management | `@Observable` | No Combine; native SwiftUI integration in iOS 17+ |
+| Async | `async/await` | First-class Swift concurrency, simpler than Combine pipelines |
+| Networking | `URLSession` | No third-party dependency needed for one endpoint |
+| Image loading | `AsyncImage` | Built-in, sufficient for this scale |
+| Data viz | `Swift Charts BarMark` | Native; renders life span min/max at a glance |
+| API key | xcconfig → Info.plist → Bundle | Keeps secrets out of source files |
+| Testability | Protocol + constructor injection | Swap real client for mock in one line |
+| Navigation | `NavigationStack` | SwiftUI-native, no `UINavigationController` bridging |
+
+---
+
+## Setup
+
+Requirements: **Xcode 16+**, **iOS 17+**
+
+```bash
+git clone <repo-url>
+open "The Cat/The Cat.xcodeproj"
+```
+
+The `Config.xcconfig` file should be git-ignored, but it is not for the purpose of the exercise. You can update it at `The Cat/The Cat/Configuration/Config.xcconfig`:
+
+```
+CAT_API_KEY = your_key_here
+```
+
+Build and run. The `Info.plist` picks up `$(CAT_API_KEY)` automatically.
+
+---
+
+## Testing
+
+Unit tests use the **Swift Testing** framework (`@Suite`, `@Test`, `#expect`). UI tests use **XCUIAutomation**.
+
+Run: `⌘U` in Xcode.
+
+### What's tested
+
+`MockAPIClient` implements `APIClientProtocol` and holds a `Result<[Breed], Error>` that tests set directly — no network calls ever made.
+
+| Category | Tests |
+|---|---|
+| Happy path | Breeds array populated; `isLoading` cleared after success |
+| Errors | Network error, server 500, timeout, decoding failure, 401 unauthorized |
+| Edge cases | Empty response stops pagination; error message mentions "API key" on 401 |
+| Pagination | Second call appends; no third call issued when `hasMorePages` is false |
+| Resilience | `refresh()` after failure resets state and reloads successfully |
+
+---
+
+### AI Assistance
+
+I've manually created all the structure I wanted to have for this project. Then I used AI for connecting things together, explaining clearly what was the expected result.
+
+Test stubs and mock scaffolding were partially generated by AI. Each generated test was manually verified to assert the **right thing** — not just that it compiles and passes. Pay particular attention to async timing: AI-generated tests sometimes miss `await` on the act step or assert before state has settled.
+
+---
+
+## If I Had More Time
+
+### Image usage
+
+- Making a tile list, better for browsing and giving a better preview for the user.
+
+- Full screen mode for the picture
+
+### Filters?
+
+A simple selection for filtering the lists based on the different information we have from the cats, like country, temperament...
+
+### Others
+
+Search, save as favorite, share a link
