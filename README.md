@@ -2,6 +2,8 @@
 
 > iOS app — Jeremie Berduck
 
+<img width="128" height="128" alt="AppIcon" src="https://github.com/user-attachments/assets/ceab35a5-d64e-4b7a-9eb6-7d7b2349171f" />
+
 ## Overview
 
 A native iOS app built as part of the Egeniq iOS code assessment.
